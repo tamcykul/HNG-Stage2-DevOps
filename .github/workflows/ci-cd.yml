@@ -1,0 +1,109 @@
+name: HNG Stage 2 CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lint tools
+        run: |
+          pip install flake8
+
+      - name: Run Python lint
+        run: flake8 api worker
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r api/requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests
+        run: |
+          pytest api --cov=api
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t api:latest ./api
+
+      - name: Build Worker image
+        run: docker build -t worker:latest ./worker
+
+  security:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan API image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "api:latest"
+          format: "sarif"
+          output: "trivy-api.sarif"
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-api.sarif
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: security
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start API
+        run: |
+          docker build -t api ./api
+          docker run -d -p 8000:8000 api
+
+      - name: Test API health
+        run: |
+          sleep 10
+          curl http://localhost:8000/docs
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: integration
+
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy message
+        run: echo "Deployment successful (simulate rolling update)"
