@@ -2,30 +2,36 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repo
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      # 2. Install Docker Compose (new GitHub runners already have Docker)
+      - name: Verify Docker installation
+        run: docker --version
 
-      - name: Install dependencies
-        working-directory: api
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      # 3. Build and start all services (api + redis + worker)
+      - name: Build and start containers
+        run: docker compose up -d --build
 
+      # 4. Wait for services to be ready (important for Redis + FastAPI startup)
+      - name: Wait for services
+        run: sleep 15
+
+      # 5. Run tests inside API container
       - name: Run tests
-        working-directory: api
-        run: |
-          pytest -v
+        run: docker exec api pytest -v
+
+      # 6. Always clean up containers
+      - name: Shutdown containers
+        if: always()
+        run: docker compose down -v

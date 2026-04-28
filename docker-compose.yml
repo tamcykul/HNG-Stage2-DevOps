@@ -1,26 +1,42 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7
     container_name: redis
-    ports:
-      - "6379:6379"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: always
 
   api:
     build: ./api
     container_name: api
     ports:
       - "8000:8000"
-    depends_on:
-      - redis
     environment:
-      - REDIS_HOST=redis
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: always
 
   worker:
     build: ./worker
     container_name: worker
-    depends_on:
-      - redis
     environment:
-      - REDIS_HOST=redis
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: always
+
+networks:
+  app-network:
+    driver: bridge
